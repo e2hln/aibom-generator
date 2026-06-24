@@ -10,6 +10,13 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
+
+def _ensure_parent_dir(path: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
 class CLIController:
     def __init__(self):
         self.service = AIBOMService()
@@ -61,9 +68,12 @@ class CLIController:
             base, ext = os.path.splitext(output_file_1_6)
             output_file_1_7 = f"{base.replace('_1_6', '')}_1_7{ext}" if '_1_6' in base else f"{base}_1_7{ext}"
 
-            with open(output_file_1_6, 'w') as f:
+            _ensure_parent_dir(output_file_1_6)
+            _ensure_parent_dir(output_file_1_7)
+
+            with open(output_file_1_6, 'w', encoding="utf-8") as f:
                 f.write(json_1_6)
-            with open(output_file_1_7, 'w') as f:
+            with open(output_file_1_7, 'w', encoding="utf-8") as f:
                 f.write(json_1_7)
             
             # Check for validation results
@@ -125,8 +135,10 @@ class CLIController:
 
                     html_content = template.render(context)
                     html_output_file = output_file_primary.replace("_1_6.json", ".html").replace(".json", ".html")
-                    with open(html_output_file, "w") as f:
+                    html_temp_file = f"{html_output_file}.tmp"
+                    with open(html_temp_file, "w", encoding="utf-8") as f:
                         f.write(html_content)
+                    os.replace(html_temp_file, html_output_file)
                     
                     logger.info("HTML Report: %s", html_output_file)
 
@@ -174,7 +186,12 @@ class CLIController:
                                 logger.info("License: %s", ", ".join(license_list))
                                 
                 except Exception as e:
-                    logger.warning("Failed to generate HTML report: %s", e)
+                    if "html_temp_file" in locals() and os.path.exists(html_temp_file):
+                        try:
+                            os.remove(html_temp_file)
+                        except OSError:
+                            logger.debug("Failed to remove temporary HTML report: %s", html_temp_file, exc_info=True)
+                    logger.warning("Failed to generate HTML report: %s", e, exc_info=True)
 
             for r in reports:
                 spec = r.get("spec_version", "1.6")

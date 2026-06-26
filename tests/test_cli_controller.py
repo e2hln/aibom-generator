@@ -104,6 +104,14 @@ class _FakeService:
 
 
 class CLIControllerTests(unittest.TestCase):
+    def _assert_cyclonedx_export(self, exported: dict, spec_version: str):
+        self.assertEqual(exported["bomFormat"], "CycloneDX")
+        self.assertEqual(exported["specVersion"], spec_version)
+        self.assertTrue(
+            exported["$schema"].endswith(f"bom-{spec_version}.schema.json"),
+            exported["$schema"],
+        )
+
     def test_generate_creates_parent_directory_for_nested_custom_output(self):
         repo_root = Path(__file__).resolve().parents[1]
         output_dir = repo_root / "sboms" / f"test-cli-controller-nested-{uuid.uuid4().hex}" / "reports"
@@ -129,13 +137,77 @@ class CLIControllerTests(unittest.TestCase):
             self.assertTrue(html_report.exists())
             self.assertGreater(html_report.stat().st_size, 0)
 
-            json.loads(json_1_6.read_text(encoding="utf-8"))
-            json.loads(json_1_7.read_text(encoding="utf-8"))
+            self._assert_cyclonedx_export(json.loads(json_1_6.read_text(encoding="utf-8")), "1.6")
+            self._assert_cyclonedx_export(json.loads(json_1_7.read_text(encoding="utf-8")), "1.7")
 
             html = html_report.read_text(encoding="utf-8")
             self.assertIn("AIBOM Summary", html)
         finally:
             shutil.rmtree(output_dir.parent, ignore_errors=True)
+
+    def test_generate_extensionless_output_writes_distinct_json_and_html_files(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        output_dir = repo_root / "sboms" / f"test-cli-controller-extensionless-{uuid.uuid4().hex}"
+        output_dir.mkdir(parents=True)
+        try:
+            output_base = output_dir / "qwythos-current"
+            controller = CLIController()
+            controller.service = _FakeService()
+
+            controller.generate(
+                "owner/local-cli-model",
+                output_file=str(output_base),
+            )
+
+            json_1_6 = output_dir / "qwythos-current_1_6.json"
+            json_1_7 = output_dir / "qwythos-current_1_7.json"
+            html_report = output_dir / "qwythos-current.html"
+
+            self.assertEqual(
+                len({json_1_6.resolve(), json_1_7.resolve(), html_report.resolve()}),
+                3,
+            )
+            self.assertFalse(output_base.exists())
+            self.assertGreater(json_1_6.stat().st_size, 0)
+            self.assertGreater(json_1_7.stat().st_size, 0)
+            self.assertGreater(html_report.stat().st_size, 0)
+            self.assertTrue((output_dir / "static").is_dir())
+
+            json_1_6_text = json_1_6.read_text(encoding="utf-8")
+            self.assertFalse(json_1_6_text.lstrip().startswith("<"))
+            self._assert_cyclonedx_export(json.loads(json_1_6_text), "1.6")
+            self._assert_cyclonedx_export(json.loads(json_1_7.read_text(encoding="utf-8")), "1.7")
+
+            html = html_report.read_text(encoding="utf-8")
+            self.assertIn("AIBOM Summary", html)
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
+
+    def test_generate_html_output_writes_html_exactly_and_json_side_files(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        output_dir = repo_root / "sboms" / f"test-cli-controller-html-output-{uuid.uuid4().hex}"
+        output_dir.mkdir(parents=True)
+        try:
+            html_report = output_dir / "cli-report.html"
+            controller = CLIController()
+            controller.service = _FakeService()
+
+            controller.generate(
+                "owner/local-cli-model",
+                output_file=str(html_report),
+            )
+
+            json_1_6 = output_dir / "cli-report_1_6.json"
+            json_1_7 = output_dir / "cli-report_1_7.json"
+
+            self.assertGreater(html_report.stat().st_size, 0)
+            self._assert_cyclonedx_export(json.loads(json_1_6.read_text(encoding="utf-8")), "1.6")
+            self._assert_cyclonedx_export(json.loads(json_1_7.read_text(encoding="utf-8")), "1.7")
+
+            html = html_report.read_text(encoding="utf-8")
+            self.assertIn("AIBOM Summary", html)
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
 
     def test_generate_writes_non_empty_utf8_html_report(self):
         repo_root = Path(__file__).resolve().parents[1]
@@ -165,8 +237,8 @@ class CLIControllerTests(unittest.TestCase):
             self.assertIn("CycloneDX 1.6", html)
             self.assertIn("CLI HTML report unicode regression path \u2705", html)
 
-            json.loads(json_1_6.read_text(encoding="utf-8"))
-            json.loads(json_1_7.read_text(encoding="utf-8"))
+            self._assert_cyclonedx_export(json.loads(json_1_6.read_text(encoding="utf-8")), "1.6")
+            self._assert_cyclonedx_export(json.loads(json_1_7.read_text(encoding="utf-8")), "1.7")
         finally:
             shutil.rmtree(output_dir, ignore_errors=True)
 
